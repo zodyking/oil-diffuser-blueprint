@@ -1,6 +1,8 @@
 blueprint:
   name: Oil Diffuser Ai
   description: >
+    ![OilDiffuser](https://raw.githubusercontent.com/zodyking/oil-diffuser-blueprint/refs/heads/main/ChatGPT%20Image%20Oct%2018%2C%202025%2C%2007_21_16%20PM.png)
+    
     Control a waterless oil diffuser via a smart outlet with two independent modes:
     1) duty_cycle: every X minutes, turn ON for Y minutes
     2) presence: when presence detected, turn ON for Y minutes
