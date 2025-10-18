@@ -1,12 +1,10 @@
 blueprint:
   name: Oil Diffuser Ai
   description: >
-    ![OilDiffuser](https://raw.githubusercontent.com/zodyking/oil-diffuser-blueprint/refs/heads/main/ChatGPT%20Image%20Oct%2018%2C%202025%2C%2007_21_16%20PM.png)
-    
     Control a waterless oil diffuser via a smart outlet with two independent modes:
     1) duty_cycle: every X minutes, turn ON for Y minutes
     2) presence: when presence detected, turn ON for Y minutes
-    Optional TTS announcement before ON and safety max runtime cutoff.
+    Includes optional TTS before ON and a safety max-runtime cutoff.
   domain: automation
   author: chat.openai.com/@gpt
   source_url: https://example.com/blueprints/oil_diffuser_ai
@@ -21,7 +19,7 @@ blueprint:
 
     operation_mode:
       name: Operation Mode
-      description: 'Choose "duty_cycle" or "presence".'
+      description: Choose "duty_cycle" or "presence".
       default: duty_cycle
       selector:
         select:
@@ -29,7 +27,7 @@ blueprint:
             - duty_cycle
             - presence
 
-    # -------- Duty-Cycle (only used when operation_mode = duty_cycle) --------
+    # -------- Duty-Cycle (used when operation_mode = duty_cycle) --------
     duty_interval_minutes:
       name: Duty-cycle interval (minutes)
       description: Every X minutes, run one ON period.
@@ -52,10 +50,10 @@ blueprint:
       selector:
         duration: {}
 
-    # -------- Presence (only used when operation_mode = presence) --------
+    # -------- Presence (used when operation_mode = presence) --------
     presence_sensor:
       name: Presence / Motion Sensor (binary_sensor)
-      description: Used in presence mode.
+      description: Used only in presence mode.
       default: ""
       selector:
         entity:
@@ -109,8 +107,8 @@ blueprint:
 
     tts_message:
       name: TTS Message (templated)
-      description: 'You can use {{ room_name }}. Example: Freshening up the {{ room_name }}.'
-      default: 'Freshening up the {{ room_name }}.'
+      description: Example: Freshening up the room. Supports the variable room_name.
+      default: "Freshening up the {{ room_name }}."
       selector:
         text:
           multiline: true
@@ -131,19 +129,18 @@ max: 10
 max_exceeded: silent
 
 variables:
-  v_switch: !input outlet_switch
+  # Mode
   op_mode: !input operation_mode
 
-  # duty
+  # Entities / durations
+  v_switch: !input outlet_switch
   v_interval: !input duty_interval_minutes
-  v_dur: !input duty_on_duration
-
-  # presence
+  v_duty_dur: !input duty_on_duration
   v_presence: !input presence_sensor
   v_presence_on: !input presence_on_state
   v_presence_dur: !input presence_on_duration
 
-  # tts
+  # TTS
   v_tts: !input tts_enabled
   v_player: !input tts_media_player
   v_engine: !input tts_engine_id
@@ -151,16 +148,18 @@ variables:
   v_msg: !input tts_message
 
 trigger:
-  # Duty-cycle tick (evaluate every minute)
+  # Duty-cycle tick (evaluate every minute) — enabled only in duty_cycle mode
   - id: duty_tick
     platform: time_pattern
     minutes: "/1"
+    enabled: "{{ op_mode == 'duty_cycle' }}"
 
-  # Presence ON
+  # Presence ON — enabled only in presence mode and when a sensor is provided
   - id: presence_on
     platform: state
     entity_id: !input presence_sensor
     to: !input presence_on_state
+    enabled: "{{ op_mode == 'presence' and (v_presence | string | length > 0) }}"
 
   # Safety cutoff
   - id: safety_cutoff
@@ -177,8 +176,7 @@ action:
       # -------- Duty-cycle mode --------
       - conditions:
           - condition: template
-            value_template: >-
-              {{ trigger.id == 'duty_tick' and op_mode == 'duty_cycle' }}
+            value_template: "{{ trigger.id == 'duty_tick' and op_mode == 'duty_cycle' }}"
           - condition: template
             value_template: >-
               {% set iv = (v_interval | int(1)) %}
@@ -186,8 +184,7 @@ action:
         sequence:
           - if:
               - condition: template
-                value_template: >-
-                  {{ v_tts and (v_player | string | length > 0) and is_state(v_switch,'off') }}
+                value_template: "{{ v_tts and (v_player | string | length > 0) and is_state(v_switch,'off') }}"
             then:
               - choose:
                   - conditions:
@@ -207,7 +204,8 @@ action:
                       media_player_entity_id: "{{ v_player }}"
                       message: "{{ v_msg }}"
           - service: switch.turn_on
-            target: { entity_id: "{{ v_switch }}" }
+            target:
+              entity_id: !input outlet_switch
           - delay: !input duty_on_duration
           - if:
               - condition: state
@@ -215,18 +213,17 @@ action:
                 state: "on"
             then:
               - service: switch.turn_off
-                target: { entity_id: "{{ v_switch }}" }
+                target:
+                  entity_id: !input outlet_switch
 
       # -------- Presence mode --------
       - conditions:
           - condition: template
-            value_template: >-
-              {{ trigger.id == 'presence_on' and op_mode == 'presence' and (v_presence | string | length > 0) }}
+            value_template: "{{ trigger.id == 'presence_on' and op_mode == 'presence' }}"
         sequence:
           - if:
               - condition: template
-                value_template: >-
-                  {{ v_tts and (v_player | string | length > 0) and is_state(v_switch,'off') }}
+                value_template: "{{ v_tts and (v_player | string | length > 0) and is_state(v_switch,'off') }}"
             then:
               - choose:
                   - conditions:
@@ -246,7 +243,8 @@ action:
                       media_player_entity_id: "{{ v_player }}"
                       message: "{{ v_msg }}"
           - service: switch.turn_on
-            target: { entity_id: "{{ v_switch }}" }
+            target:
+              entity_id: !input outlet_switch
           - delay: !input presence_on_duration
           - if:
               - condition: state
@@ -254,7 +252,8 @@ action:
                 state: "on"
             then:
               - service: switch.turn_off
-                target: { entity_id: "{{ v_switch }}" }
+                target:
+                  entity_id: !input outlet_switch
 
       # -------- Safety cutoff --------
       - conditions:
@@ -262,11 +261,12 @@ action:
             value_template: "{{ trigger.id == 'safety_cutoff' }}"
         sequence:
           - service: switch.turn_off
-            target: { entity_id: "{{ v_switch }}" }
+            target:
+              entity_id: !input outlet_switch
           - service: logbook.log
             data:
               name: Diffuser Safety
               message: "Turned OFF after reaching max runtime."
-              entity_id: "{{ v_switch }}"
+              entity_id: !input outlet_switch
 
   - stop: "Done"
