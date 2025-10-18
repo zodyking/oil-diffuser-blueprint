@@ -1,6 +1,8 @@
 blueprint:
   name: Waterless Oil Diffuser — Outlet (Duty-Cycle + Presence + TTS + Safety)
   description: >
+    ![OilDiffuser](https://raw.githubusercontent.com/zodyking/oil-diffuser-blueprint/refs/heads/main/ChatGPT%20Image%20Oct%2018%2C%202025%2C%2007_21_16%20PM.png)
+     
     Control a waterless oil diffuser (e.g., Airversa Scenta XL) via a smart outlet.
     Features:
       • Duty-cycle scheduler: every X minutes turn ON for Y duration
