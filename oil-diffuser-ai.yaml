@@ -1,12 +1,12 @@
 blueprint:
   name: Oil Diffuser Ai
-  description: >
+  description: |
     ![OilDiffuser](https://raw.githubusercontent.com/zodyking/oil-diffuser-blueprint/refs/heads/main/ChatGPT%20Image%20Oct%2018%2C%202025%2C%2007_21_16%20PM.png)
-    
+
     Control a waterless oil diffuser via a smart outlet with two independent modes:
     1) duty_cycle: every X minutes, turn ON for Y minutes
     2) presence: when presence detected, turn ON for Y minutes
-    Includes optional TTS before ON and a safety max-runtime cutoff.
+    Optional TTS before ON and a safety max-runtime cutoff.
   domain: automation
   author: chat.openai.com/@gpt
   source_url: https://example.com/blueprints/oil_diffuser_ai
@@ -21,7 +21,7 @@ blueprint:
 
     operation_mode:
       name: Operation Mode
-      description: Choose "duty_cycle" or "presence".
+      description: "Choose 'duty_cycle' or 'presence'."
       default: duty_cycle
       selector:
         select:
@@ -32,7 +32,7 @@ blueprint:
     # -------- Duty-Cycle (used when operation_mode = duty_cycle) --------
     duty_interval_minutes:
       name: Duty-cycle interval (minutes)
-      description: Every X minutes, run one ON period.
+      description: "Every X minutes, start one ON period."
       default: 30
       selector:
         number:
@@ -44,7 +44,7 @@ blueprint:
 
     duty_on_duration:
       name: Duty-cycle ON duration
-      description: How long to keep the outlet ON each cycle.
+      description: "How long to keep the outlet ON each cycle."
       default:
         hours: 0
         minutes: 8
@@ -55,15 +55,15 @@ blueprint:
     # -------- Presence (used when operation_mode = presence) --------
     presence_sensor:
       name: Presence / Motion Sensor (binary_sensor)
-      description: Used only in presence mode.
+      description: "Used only in presence mode."
       default: ""
       selector:
         entity:
           domain: binary_sensor
 
     presence_on_state:
-      name: Presence "ON" state
-      description: State of presence sensor that means present.
+      name: Presence 'ON' state
+      description: "State of the presence sensor that means present."
       default: "on"
       selector:
         select:
@@ -71,7 +71,7 @@ blueprint:
 
     presence_on_duration:
       name: Presence ON duration
-      description: Duration to keep diffuser ON after presence is detected.
+      description: "Duration to keep diffuser ON after presence is detected."
       default:
         hours: 0
         minutes: 20
@@ -88,7 +88,7 @@ blueprint:
 
     tts_media_player:
       name: TTS Media Player (optional)
-      description: media_player to play the TTS message on.
+      description: "media_player to play the TTS message on."
       default: ""
       selector:
         entity:
@@ -96,7 +96,7 @@ blueprint:
 
     tts_engine_id:
       name: TTS Engine ID (optional)
-      description: If blank, uses default TTS engine.
+      description: "If blank, uses default TTS engine."
       default: ""
       selector:
         text: {}
@@ -109,7 +109,7 @@ blueprint:
 
     tts_message:
       name: TTS Message (templated)
-      description: Example: Freshening up the room. Supports the variable room_name.
+      description: "Example: 'Freshening up the room.' Supports the variable room_name."
       default: "Freshening up the {{ room_name }}."
       selector:
         text:
@@ -118,7 +118,7 @@ blueprint:
     # -------- Safety --------
     max_runtime:
       name: Safety cutoff — Max ON runtime
-      description: If outlet stays ON this long for any reason, force OFF.
+      description: "If outlet stays ON this long for any reason, force OFF."
       default:
         hours: 2
         minutes: 0
@@ -130,6 +130,7 @@ mode: parallel
 max: 10
 max_exceeded: silent
 
+# ---------------- Variables ----------------
 variables:
   # Mode
   op_mode: !input operation_mode
@@ -149,19 +150,20 @@ variables:
   room_name: !input tts_room_name
   v_msg: !input tts_message
 
+# ---------------- Triggers ----------------
 trigger:
-  # Duty-cycle tick (evaluate every minute) — enabled only in duty_cycle mode
+  # Duty-cycle tick (evaluate every minute; branch checks mode & interval)
   - id: duty_tick
     platform: time_pattern
     minutes: "/1"
-    enabled: "{{ op_mode == 'duty_cycle' }}"
 
-  # Presence ON — enabled only in presence mode and when a sensor is provided
+  # Presence ON (safe even if presence_sensor is blank)
   - id: presence_on
-    platform: state
-    entity_id: !input presence_sensor
-    to: !input presence_on_state
-    enabled: "{{ op_mode == 'presence' and (v_presence | string | length > 0) }}"
+    platform: template
+    value_template: >-
+      {{ op_mode == 'presence'
+         and (v_presence | string | length > 0)
+         and is_state(v_presence, v_presence_on) }}
 
   # Safety cutoff
   - id: safety_cutoff
@@ -172,6 +174,7 @@ trigger:
 
 condition: []
 
+# ---------------- Actions ----------------
 action:
   - choose:
 
