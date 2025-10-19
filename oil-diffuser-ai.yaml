@@ -12,20 +12,46 @@ blueprint:
   source_url: https://example.com/blueprints/oil_diffuser_ai
 
   input:
-    # ---- Required ----
+    # ---- Primary entities (grouped together) ----
     outlet_switch:
       name: Diffuser outlet
+      description: "Select the smart outlet that powers the diffuser."
       selector:
         entity:
           domain: switch
 
-    # ---- Duty cycle ----
+    presence_sensor:
+      name: Presence / motion sensor
+      description: "Sensor used for Presence mode (optional). Leave blank to disable presence triggers."
+      default: ""
+      selector:
+        entity:
+          domain: binary_sensor
+
+    presence_on_state:
+      name: Presence 'ON' state
+      description: "Which sensor state means detected/present."
+      default: "on"
+      selector:
+        select:
+          options: ["on", "home", "occupied", "detected"]
+
+    # ---- Mode toggles (grouped together) ----
     duty_enabled:
       name: Duty cycle enabled
+      description: "If on, runs a periodic cycle: every X minutes, turn the outlet ON for Y duration."
       default: true
       selector:
         boolean: {}
 
+    presence_enabled:
+      name: Presence mode enabled
+      description: "If on, turns the outlet ON for Z duration whenever the presence sensor changes to the selected 'ON' state."
+      default: true
+      selector:
+        boolean: {}
+
+    # ---- Duty cycle settings ----
     duty_interval_minutes:
       name: Duty cycle interval (minutes)
       description: "Every X minutes, start one ON period."
@@ -47,29 +73,7 @@ blueprint:
       selector:
         duration: {}
 
-    # ---- Presence ----
-    presence_enabled:
-      name: Presence mode enabled
-      default: true
-      selector:
-        boolean: {}
-
-    presence_sensor:
-      name: Presence / motion sensor
-      description: "Used when Presence mode is enabled."
-      default: ""
-      selector:
-        entity:
-          domain: binary_sensor
-
-    presence_on_state:
-      name: Presence 'ON' state
-      description: "State that means detected/present."
-      default: "on"
-      selector:
-        select:
-          options: ["on", "home", "occupied", "detected"]
-
+    # ---- Presence settings ----
     presence_on_duration:
       name: Presence ON duration
       description: "How long to keep the outlet ON after presence is detected."
@@ -80,7 +84,7 @@ blueprint:
       selector:
         duration: {}
 
-    # ---- TTS (mirrors Aqara pattern) ----
+    # ---- TTS (Aqara-style plumbing) ----
     tts_enabled:
       name: TTS announcement before turning ON
       description: "Speaks a short message using the outlet's Area name."
@@ -90,7 +94,7 @@ blueprint:
 
     tts_engine:
       name: TTS engine
-      description: "Pick your TTS engine entity (e.g., tts.piper)."
+      description: "Pick your TTS engine entity (e.g., tts.piper). Required if TTS is enabled."
       default: ""
       selector:
         entity:
@@ -140,7 +144,6 @@ blueprint:
       selector:
         duration: {}
 
-# Queue speech to avoid overlap; actions themselves can run in parallel
 mode: queued
 max: 4
 
@@ -169,135 +172,5 @@ variables:
 
   # Can we speak at all?
   has_tts: >-
-    {{ (players | length > 0)
+    {{ speak_enabled and (players | length > 0)
        and (tts_engine_ent is string and tts_engine_ent | length > 0)
-       and speak_enabled }}
-
-  # Auto message from Area name (fallback to "the room")
-  v_msg: >-
-    {% set area = area_name(v_switch) %}
-    {{ 'Freshening up ' ~ (area if area else 'the room') ~ '.' }}
-
-# ---------------- Triggers ----------------
-trigger:
-  # Duty-cycle tick: evaluate every minute; branch checks enable & interval
-  - id: duty_tick
-    platform: time_pattern
-    minutes: "/1"
-
-  # Presence ON (template trigger is safe if sensor left blank)
-  - id: presence_on
-    platform: template
-    value_template: >-
-      {{ presence_enabled
-         and (v_presence | string | length > 0)
-         and is_state(v_presence, v_presence_on) }}
-
-  # Safety cutoff
-  - id: safety_cutoff
-    platform: state
-    entity_id: !input outlet_switch
-    to: "on"
-    for: !input max_runtime
-
-condition: []
-
-# ---------------- Actions ----------------
-action:
-  - variables:
-      # recompute per-run in case Areas change
-      v_msg_now: >-
-        {% set area = area_name(v_switch) %}
-        {{ 'Freshening up ' ~ (area if area else 'the room') ~ '.' }}
-
-  - choose:
-
-      # ---- Duty cycle (independent) ----
-      - conditions:
-          - condition: template
-            value_template: "{{ trigger.id == 'duty_tick' and duty_enabled }}"
-          - condition: template
-            value_template: >-
-              {% set iv = (v_interval | int(1)) %}
-              {{ ((as_timestamp(now()) | int // 60) % iv) == 0 }}
-        sequence:
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ has_tts and is_state(v_switch,'off') }}"
-                sequence:
-                  - delay:
-                      milliseconds: "{{ tts_preroll_ms | int }}"
-                  - service: tts.speak
-                    target:
-                      entity_id: !input tts_engine
-                    data:
-                      message: "{{ v_msg_now }}"
-                      cache: !input tts_cache
-                      media_player_entity_id: !input tts_media_players
-                      options:
-                        voice: "{{ tts_voice_name | default('') }}"
-            default: []
-          - service: switch.turn_on
-            target:
-              entity_id: !input outlet_switch
-          - delay: !input duty_on_duration
-          - if:
-              - condition: state
-                entity_id: !input outlet_switch
-                state: "on"
-            then:
-              - service: switch.turn_off
-                target:
-                  entity_id: !input outlet_switch
-
-      # ---- Presence (independent) ----
-      - conditions:
-          - condition: template
-            value_template: "{{ trigger.id == 'presence_on' }}"
-        sequence:
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: "{{ has_tts and is_state(v_switch,'off') }}"
-                sequence:
-                  - delay:
-                      milliseconds: "{{ tts_preroll_ms | int }}"
-                  - service: tts.speak
-                    target:
-                      entity_id: !input tts_engine
-                    data:
-                      message: "{{ v_msg_now }}"
-                      cache: !input tts_cache
-                      media_player_entity_id: !input tts_media_players
-                      options:
-                        voice: "{{ tts_voice_name | default('') }}"
-            default: []
-          - service: switch.turn_on
-            target:
-              entity_id: !input outlet_switch
-          - delay: !input presence_on_duration
-          - if:
-              - condition: state
-                entity_id: !input outlet_switch
-                state: "on"
-            then:
-              - service: switch.turn_off
-                target:
-                  entity_id: !input outlet_switch
-
-      # ---- Safety cutoff ----
-      - conditions:
-          - condition: template
-            value_template: "{{ trigger.id == 'safety_cutoff' }}"
-        sequence:
-          - service: switch.turn_off
-            target:
-              entity_id: !input outlet_switch
-          - service: logbook.log
-            data:
-              name: Diffuser Safety
-              message: "Turned OFF after reaching max runtime."
-              entity_id: !input outlet_switch
-
-  - stop: "Done"
