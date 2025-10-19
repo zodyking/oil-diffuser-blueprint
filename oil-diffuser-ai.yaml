@@ -8,7 +8,7 @@ blueprint:
     • Presence — when the presence sensor turns ON, keep ON for Z minutes  
     Optional TTS before ON and a safety max-runtime cutoff.
   domain: automation
-  author: chat.openai.com/@gpt
+  author: zodyking
 
   input:
     # ---- Core entities (ordered) ----
