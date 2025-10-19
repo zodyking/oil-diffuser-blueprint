@@ -9,7 +9,6 @@ blueprint:
     Optional TTS before ON and a safety max-runtime cutoff.
   domain: automation
   author: chat.openai.com/@gpt
-  source_url: https://example.com/blueprints/oil_diffuser_ai
 
   input:
     # ---- Core entities (ordered) ----
@@ -22,7 +21,7 @@ blueprint:
 
     presence_sensor:
       name: Presence / motion sensor
-      description: "Binary sensor used for Presence mode (leave empty to disable Presence mode). Fires when the sensor is 'on'."
+      description: "Binary sensor used for Presence mode. Fires when state becomes 'on'. Leave empty to disable Presence mode."
       default: ""
       selector:
         entity:
@@ -181,13 +180,11 @@ trigger:
     platform: time_pattern
     minutes: "/1"
 
-  # Presence ON (template trigger is safe if sensor left blank)
+  # RELIABLE presence trigger: fires when sensor becomes 'on'
   - id: presence_on
-    platform: template
-    value_template: >-
-      {{ presence_enabled
-         and (v_presence | string | length > 0)
-         and is_state(v_presence, 'on') }}
+    platform: state
+    entity_id: !input presence_sensor
+    to: "on"
 
   # Safety cutoff
   - id: safety_cutoff
@@ -250,8 +247,13 @@ action:
       # ---- Presence (independent) ----
       - conditions:
           - condition: template
-            value_template: "{{ trigger.id == 'presence_on' }}"
+            value_template: "{{ trigger.id == 'presence_on' and presence_enabled }}"
         sequence:
+          - service: logbook.log
+            data:
+              name: Diffuser Presence
+              message: "Presence fired — turning ON diffuser."
+              entity_id: !input outlet_switch
           - choose:
               - conditions:
                   - condition: template
