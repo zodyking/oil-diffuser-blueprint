@@ -3,7 +3,7 @@ blueprint:
   description: |
     ![OilDiffuser](https://raw.githubusercontent.com/zodyking/oil-diffuser-blueprint/refs/heads/main/ChatGPT%20Image%20Oct%2018%2C%202025%2C%2007_21_16%20PM.png)
 
-    Control a water/oil diffuser on a smart outlet with two independent modes that can run at the same time:
+    Control a water/oil diffuser on a smart outlet with two independent modes:
     • Duty cycle — start every X minutes; keep ON for Y minutes
     • Presence — OUTLET ON while presence is ON, OFF when presence clears
     Optional TTS before turning ON and a safety max-runtime cutoff.
@@ -33,7 +33,7 @@ blueprint:
     # ---- Mode toggles (ordered) ----
     duty_enabled:
       name: Duty cycle enabled
-      description: "Run a cycle every X minutes."
+      description: "Run a cycle on a fixed interval."
       default: true
       selector:
         boolean: {}
@@ -46,20 +46,50 @@ blueprint:
         boolean: {}
 
     # ---- Duty cycle settings ----
-    duty_interval_minutes:
+    duty_interval_pattern:
       name: Cycle interval (minutes)
-      description: "How often to start a cycle (X)."
-      default: 30
+      description: "How often to start a cycle."
+      default: "/30"
       selector:
-        number:
-          min: 1
-          max: 1440
-          step: 1
-          unit_of_measurement: min
+        select:
+          mode: dropdown
+          options:
+            - label: "1 minute"
+              value: "/1"
+            - label: "2 minutes"
+              value: "/2"
+            - label: "3 minutes"
+              value: "/3"
+            - label: "4 minutes"
+              value: "/4"
+            - label: "5 minutes"
+              value: "/5"
+            - label: "6 minutes"
+              value: "/6"
+            - label: "10 minutes"
+              value: "/10"
+            - label: "12 minutes"
+              value: "/12"
+            - label: "15 minutes"
+              value: "/15"
+            - label: "20 minutes"
+              value: "/20"
+            - label: "24 minutes"
+              value: "/24"
+            - label: "30 minutes"
+              value: "/30"
+            - label: "40 minutes"
+              value: "/40"
+            - label: "45 minutes"
+              value: "/45"
+            - label: "50 minutes"
+              value: "/50"
+            - label: "60 minutes"
+              value: "/60"
 
     duty_on_duration:
       name: On-time per cycle
-      description: "How long to keep the outlet ON each cycle (Y)."
+      description: "How long to keep the outlet ON each cycle."
       default:
         hours: 0
         minutes: 8
@@ -139,7 +169,7 @@ variables:
 
   # Duty
   duty_enabled: !input duty_enabled
-  v_interval: !input duty_interval_minutes
+  v_interval_pat: !input duty_interval_pattern
   v_duty_dur: !input duty_on_duration
 
   # Presence
@@ -167,10 +197,10 @@ variables:
 
 # ---------------- Triggers ----------------
 trigger:
-  # Duty-cycle tick: evaluate every minute; branch checks enable & interval
+  # Duty cycle: UI shows “every X minutes” using labeled values (e.g., "/30")
   - id: duty_tick
     platform: time_pattern
-    minutes: "/1"
+    minutes: !input duty_interval_pattern
 
   # Presence ON/OFF — follow sensor exactly (override behavior)
   - id: presence_on
@@ -195,14 +225,13 @@ condition: []
 # ---------------- Actions ----------------
 action:
   - variables:
-      # recompute per-run in case Areas change
       v_msg_now: >-
         {% set area = area_name(v_switch) %}
         {{ 'Freshening up ' ~ (area if area else 'the room') ~ '.' }}
 
   - choose:
 
-      # ---- Presence ON (override: force ON immediately) ----
+      # Presence ON (override: force ON immediately)
       - conditions:
           - condition: trigger
             id: presence_on
@@ -214,8 +243,7 @@ action:
                   - condition: template
                     value_template: "{{ has_tts and is_state(v_switch,'off') }}"
                 sequence:
-                  - delay:
-                      milliseconds: "{{ tts_preroll_ms | int }}"
+                  - delay: { milliseconds: "{{ tts_preroll_ms | int }}" }
                   - choose:
                       - conditions:
                           - condition: template
@@ -240,7 +268,7 @@ action:
           - service: switch.turn_on
             target: { entity_id: !input outlet_switch }
 
-      # ---- Presence OFF (override: force OFF immediately) ----
+      # Presence OFF (override: force OFF immediately)
       - conditions:
           - condition: trigger
             id: presence_off
@@ -250,18 +278,12 @@ action:
           - service: switch.turn_off
             target: { entity_id: !input outlet_switch }
 
-      # ---- Duty cycle (independent; respects presence ON) ----
+      # Duty cycle (independent; respects presence ON)
       - conditions:
           - condition: trigger
             id: duty_tick
           - condition: template
             value_template: "{{ duty_enabled }}"
-          - condition: template
-            value_template: >-
-              {# Robust interval calc; honors your X exactly #}
-              {% set iv = (v_interval | int) %}
-              {% if iv < 1 %}{% set iv = 1 %}{% endif %}
-              {{ ((as_timestamp(now()) | int // 60) % iv) == 0 }}
         sequence:
           - variables:
               sw_was_on: "{{ is_state(v_switch, 'on') }}"
@@ -270,8 +292,7 @@ action:
                   - condition: template
                     value_template: "{{ has_tts and not sw_was_on }}"
                 sequence:
-                  - delay:
-                      milliseconds: "{{ tts_preroll_ms | int }}"
+                  - delay: { milliseconds: "{{ tts_preroll_ms | int }}" }
                   - choose:
                       - conditions:
                           - condition: template
@@ -297,11 +318,9 @@ action:
             target: { entity_id: !input outlet_switch }
           - delay: !input duty_on_duration
           - choose:
-              # Respect presence: don't turn off at end of duty if presence is ON
               - conditions:
                   - condition: template
-                    value_template: >-
-                      {{ presence_enabled and is_state(v_presence, 'on') }}
+                    value_template: "{{ presence_enabled and is_state(v_presence, 'on') }}"
                 sequence: []
             default:
               - if:
@@ -314,7 +333,7 @@ action:
                   - service: switch.turn_off
                     target: { entity_id: !input outlet_switch }
 
-      # ---- Safety cutoff ----
+      # Safety cutoff
       - conditions:
           - condition: trigger
             id: safety_cutoff
