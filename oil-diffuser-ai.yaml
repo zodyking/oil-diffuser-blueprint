@@ -4,8 +4,8 @@ blueprint:
     ![OilDiffuser](https://raw.githubusercontent.com/zodyking/oil-diffuser-blueprint/refs/heads/main/ChatGPT%20Image%20Oct%2018%2C%202025%2C%2007_21_16%20PM.png)
 
     Control a waterless oil diffuser via a smart outlet with two independent modes:
-    1) duty_cycle: every X minutes, turn ON for Y minutes
-    2) presence: when presence detected, turn ON for Y minutes
+    1) duty_cycle — every X minutes, turn ON for Y minutes
+    2) presence — on presence detected, turn ON for Y minutes
     Optional TTS before ON and a safety max-runtime cutoff.
   domain: automation
   author: chat.openai.com/@gpt
@@ -21,7 +21,7 @@ blueprint:
 
     operation_mode:
       name: Operation Mode
-      description: "Choose 'duty_cycle' or 'presence'."
+      description: "Select duty_cycle or presence."
       default: duty_cycle
       selector:
         select:
@@ -40,7 +40,6 @@ blueprint:
           max: 1440
           step: 1
           unit_of_measurement: min
-          mode: slider
 
     duty_on_duration:
       name: Duty-cycle ON duration
@@ -63,8 +62,8 @@ blueprint:
 
     presence_on_state:
       name: Presence 'ON' state
-      description: "State of the presence sensor that means present."
-      default: "on"
+      description: "State of the presence sensor that means detected/present."
+      default: "detected"
       selector:
         select:
           options: ["on","home","occupied","detected"]
@@ -94,26 +93,35 @@ blueprint:
         entity:
           domain: media_player
 
-    tts_engine_id:
-      name: TTS Engine ID (optional)
-      description: "If blank, uses default TTS engine."
+    tts_engine_select:
+      name: TTS Engine
+      description: "Pick a known engine id or Custom to enter your own."
+      default: default
+      selector:
+        select:
+          options:
+            - default
+            - google_translate
+            - amazon_polly
+            - azure
+            - pico_tts
+            - coqui
+            - marytts
+            - custom
+
+    tts_engine_custom:
+      name: Custom TTS engine id (if 'custom' selected)
+      description: "Exact engine_id configured in your TTS setup."
       default: ""
       selector:
         text: {}
 
     tts_room_name:
       name: Room name for message
+      description: "Used to auto-generate: Freshening up {{ room_name }}."
       default: "room"
       selector:
         text: {}
-
-    tts_message:
-      name: TTS Message (templated)
-      description: "Example: 'Freshening up the room.' Supports the variable room_name."
-      default: "Freshening up the {{ room_name }}."
-      selector:
-        text:
-          multiline: true
 
     # -------- Safety --------
     max_runtime:
@@ -132,23 +140,25 @@ max_exceeded: silent
 
 # ---------------- Variables ----------------
 variables:
-  # Mode
   op_mode: !input operation_mode
 
-  # Entities / durations
   v_switch: !input outlet_switch
   v_interval: !input duty_interval_minutes
   v_duty_dur: !input duty_on_duration
+
   v_presence: !input presence_sensor
   v_presence_on: !input presence_on_state
   v_presence_dur: !input presence_on_duration
 
-  # TTS
   v_tts: !input tts_enabled
   v_player: !input tts_media_player
-  v_engine: !input tts_engine_id
+  v_engine_select: !input tts_engine_select
+  v_engine_custom: !input tts_engine_custom
   room_name: !input tts_room_name
-  v_msg: !input tts_message
+
+  # Auto-generated TTS message (no UI field shown)
+  v_msg: >-
+    {{ 'Freshening up ' ~ room_name ~ '.' }}
 
 # ---------------- Triggers ----------------
 trigger:
@@ -194,12 +204,22 @@ action:
               - choose:
                   - conditions:
                       - condition: template
-                        value_template: "{{ v_engine | string | length > 0 }}"
+                        value_template: "{{ v_engine_select != 'default' and v_engine_select != 'custom' }}"
                     sequence:
                       - service: tts.speak
                         data:
                           cache: false
-                          engine_id: "{{ v_engine }}"
+                          engine_id: "{{ v_engine_select }}"
+                          media_player_entity_id: "{{ v_player }}"
+                          message: "{{ v_msg }}"
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ v_engine_select == 'custom' and (v_engine_custom | string | length > 0) }}"
+                    sequence:
+                      - service: tts.speak
+                        data:
+                          cache: false
+                          engine_id: "{{ v_engine_custom }}"
                           media_player_entity_id: "{{ v_player }}"
                           message: "{{ v_msg }}"
                 default:
@@ -233,12 +253,22 @@ action:
               - choose:
                   - conditions:
                       - condition: template
-                        value_template: "{{ v_engine | string | length > 0 }}"
+                        value_template: "{{ v_engine_select != 'default' and v_engine_select != 'custom' }}"
                     sequence:
                       - service: tts.speak
                         data:
                           cache: false
-                          engine_id: "{{ v_engine }}"
+                          engine_id: "{{ v_engine_select }}"
+                          media_player_entity_id: "{{ v_player }}"
+                          message: "{{ v_msg }}"
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ v_engine_select == 'custom' and (v_engine_custom | string | length > 0) }}"
+                    sequence:
+                      - service: tts.speak
+                        data:
+                          cache: false
+                          engine_id: "{{ v_engine_custom }}"
                           media_player_entity_id: "{{ v_player }}"
                           message: "{{ v_msg }}"
                 default:
