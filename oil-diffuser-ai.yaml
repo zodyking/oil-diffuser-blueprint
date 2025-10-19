@@ -3,9 +3,9 @@ blueprint:
   description: |
     ![OilDiffuser](https://raw.githubusercontent.com/zodyking/oil-diffuser-blueprint/refs/heads/main/ChatGPT%20Image%20Oct%2018%2C%202025%2C%2007_21_16%20PM.png)
 
-    Control a waterless oil diffuser via a smart outlet with two independent modes that can run at the same time:
-    • Duty cycle — every X minutes, turn ON for Y minutes  
-    • Presence — when the presence sensor is ON, turn ON for Z minutes  
+    Control a waterless oil diffuser via a smart outlet with **two independent modes** that can run at the same time:
+    • Duty cycle — run a cycle every X minutes; keep ON for Y minutes  
+    • Presence — when the presence sensor turns ON, keep ON for Z minutes  
     Optional TTS before ON and a safety max-runtime cutoff.
   domain: automation
   author: chat.openai.com/@gpt
@@ -21,11 +21,13 @@ blueprint:
 
     presence_sensor:
       name: Presence / motion sensor
-      description: "Binary sensor used for Presence mode. Fires when state becomes 'on'. Leave empty to disable Presence mode."
-      default: ""
+      description: "Binary_sensor that reports occupancy/motion. Fires when state becomes 'on'."
       selector:
         entity:
           domain: binary_sensor
+          device_class:
+            - occupancy
+            - motion
 
     # ---- Mode toggles (ordered) ----
     duty_enabled:
@@ -136,9 +138,10 @@ blueprint:
       selector:
         duration: {}
 
-# Queue speech; actions still run fast
-mode: queued
-max: 4
+# Allow presence to run immediately even if a duty cycle is mid-delay
+mode: parallel
+max: 10
+max_exceeded: silent
 
 # ---------------- Variables ----------------
 variables:
@@ -154,7 +157,7 @@ variables:
   v_presence: !input presence_sensor
   v_presence_dur: !input presence_on_duration
 
-  # TTS plumbing (Aqara-style)
+  # TTS (Aqara-style)
   speak_enabled: !input tts_enabled
   tts_engine_ent: !input tts_engine
   players: !input tts_media_players
@@ -180,11 +183,10 @@ trigger:
     platform: time_pattern
     minutes: "/1"
 
-  # Presence ON — reliable: any prev state -> "on"
+  # Presence ON — reliable: any previous state -> "on"
   - id: presence_on
     platform: state
     entity_id: !input presence_sensor
-    from: ~
     to: "on"
 
   # Safety cutoff
@@ -206,7 +208,7 @@ action:
 
   - choose:
 
-      # ---- Duty cycle (independent) ----
+      # ---- Duty cycle (independent, non-interfering) ----
       - conditions:
           - condition: trigger
             id: duty_tick
@@ -217,22 +219,37 @@ action:
               {% set iv = (v_interval | int(1)) %}
               {{ ((as_timestamp(now()) | int // 60) % iv) == 0 }}
         sequence:
+          - variables:
+              sw_was_on: "{{ is_state(v_switch, 'on') }}"
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ has_tts and is_state(v_switch,'off') }}"
+                    value_template: "{{ has_tts and not sw_was_on }}"
                 sequence:
                   - delay:
                       milliseconds: "{{ tts_preroll_ms | int }}"
-                  - service: tts.speak
-                    target:
-                      entity_id: !input tts_engine
-                    data:
-                      message: "{{ v_msg_now }}"
-                      cache: !input tts_cache
-                      media_player_entity_id: !input tts_media_players
-                      options:
-                        voice: "{{ tts_voice_name | default('') }}"
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ (tts_voice_name | trim) != '' }}"
+                        sequence:
+                          - service: tts.speak
+                            target:
+                              entity_id: !input tts_engine
+                            data:
+                              message: "{{ v_msg_now }}"
+                              cache: !input tts_cache
+                              media_player_entity_id: !input tts_media_players
+                              options:
+                                voice: "{{ tts_voice_name }}"
+                    default:
+                      - service: tts.speak
+                        target:
+                          entity_id: !input tts_engine
+                        data:
+                          message: "{{ v_msg_now }}"
+                          cache: !input tts_cache
+                          media_player_entity_id: !input tts_media_players
             default: []
           - service: switch.turn_on
             target:
@@ -242,39 +259,51 @@ action:
               - condition: state
                 entity_id: !input outlet_switch
                 state: "on"
+              - condition: template
+                value_template: "{{ not sw_was_on }}"
             then:
               - service: switch.turn_off
                 target:
                   entity_id: !input outlet_switch
 
-      # ---- Presence (independent) ----
+      # ---- Presence (independent, non-interfering) ----
       - conditions:
           - condition: trigger
             id: presence_on
           - condition: template
             value_template: "{{ presence_enabled }}"
         sequence:
-          - service: logbook.log
-            data:
-              name: Diffuser Presence
-              message: "Presence fired — turning ON diffuser."
-              entity_id: !input outlet_switch
+          - variables:
+              sw_was_on: "{{ is_state(v_switch, 'on') }}"
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ has_tts and is_state(v_switch,'off') }}"
+                    value_template: "{{ has_tts and not sw_was_on }}"
                 sequence:
                   - delay:
                       milliseconds: "{{ tts_preroll_ms | int }}"
-                  - service: tts.speak
-                    target:
-                      entity_id: !input tts_engine
-                    data:
-                      message: "{{ v_msg_now }}"
-                      cache: !input tts_cache
-                      media_player_entity_id: !input tts_media_players
-                      options:
-                        voice: "{{ tts_voice_name | default('') }}"
+                  - choose:
+                      - conditions:
+                          - condition: template
+                            value_template: "{{ (tts_voice_name | trim) != '' }}"
+                        sequence:
+                          - service: tts.speak
+                            target:
+                              entity_id: !input tts_engine
+                            data:
+                              message: "{{ v_msg_now }}"
+                              cache: !input tts_cache
+                              media_player_entity_id: !input tts_media_players
+                              options:
+                                voice: "{{ tts_voice_name }}"
+                    default:
+                      - service: tts.speak
+                        target:
+                          entity_id: !input tts_engine
+                        data:
+                          message: "{{ v_msg_now }}"
+                          cache: !input tts_cache
+                          media_player_entity_id: !input tts_media_players
             default: []
           - service: switch.turn_on
             target:
@@ -284,6 +313,8 @@ action:
               - condition: state
                 entity_id: !input outlet_switch
                 state: "on"
+              - condition: template
+                value_template: "{{ not sw_was_on }}"
             then:
               - service: switch.turn_off
                 target:
