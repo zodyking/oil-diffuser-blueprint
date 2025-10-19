@@ -12,7 +12,7 @@ blueprint:
   source_url: https://example.com/blueprints/oil_diffuser_ai
 
   input:
-    # ---- Primary entities (grouped together) ----
+    # ---- Core entities (grouped together) ----
     outlet_switch:
       name: Diffuser outlet
       description: "Select the smart outlet that powers the diffuser."
@@ -22,31 +22,23 @@ blueprint:
 
     presence_sensor:
       name: Presence / motion sensor
-      description: "Sensor used for Presence mode (optional). Leave blank to disable presence triggers."
+      description: "Binary sensor used for Presence mode (leave empty to disable Presence mode)."
       default: ""
       selector:
         entity:
           domain: binary_sensor
 
-    presence_on_state:
-      name: Presence 'ON' state
-      description: "Which sensor state means detected/present."
-      default: "on"
-      selector:
-        select:
-          options: ["on", "home", "occupied", "detected"]
-
     # ---- Mode toggles (grouped together) ----
     duty_enabled:
       name: Duty cycle enabled
-      description: "If on, runs a periodic cycle: every X minutes, turn the outlet ON for Y duration."
+      description: "Runs a periodic cycle: every X minutes, turn ON for Y duration."
       default: true
       selector:
         boolean: {}
 
     presence_enabled:
       name: Presence mode enabled
-      description: "If on, turns the outlet ON for Z duration whenever the presence sensor changes to the selected 'ON' state."
+      description: "Turns ON when the presence sensor changes to the selected state, then runs for Z duration."
       default: true
       selector:
         boolean: {}
@@ -74,103 +66,18 @@ blueprint:
         duration: {}
 
     # ---- Presence settings ----
+    presence_on_state:
+      name: Presence 'ON' state
+      description: "Which state means detected/present for your sensor."
+      default: "on"
+      selector:
+        select:
+          options: ["on", "home", "occupied", "detected"]
+
     presence_on_duration:
       name: Presence ON duration
       description: "How long to keep the outlet ON after presence is detected."
       default:
         hours: 0
         minutes: 20
-        seconds: 0
-      selector:
-        duration: {}
-
-    # ---- TTS (Aqara-style plumbing) ----
-    tts_enabled:
-      name: TTS announcement before turning ON
-      description: "Speaks a short message using the outlet's Area name."
-      default: false
-      selector:
-        boolean: {}
-
-    tts_engine:
-      name: TTS engine
-      description: "Pick your TTS engine entity (e.g., tts.piper). Required if TTS is enabled."
-      default: ""
-      selector:
-        entity:
-          domain: tts
-
-    tts_media_players:
-      name: Speakers for TTS
-      description: "One or more media_player entities to speak on."
-      default: []
-      selector:
-        entity:
-          domain: media_player
-          multiple: true
-
-    tts_cache:
-      name: Cache TTS audio
-      default: false
-      selector:
-        boolean: {}
-
-    tts_voice:
-      name: Voice name (optional)
-      description: "If supported by your TTS provider (options.voice)."
-      default: ""
-      selector:
-        text: {}
-
-    tts_preroll_ms:
-      name: TTS pre-roll (milliseconds)
-      description: "Short delay before speaking to avoid clipping."
-      default: 150
-      selector:
-        number:
-          min: 0
-          max: 300
-          step: 10
-          unit_of_measurement: ms
-
-    # ---- Safety ----
-    max_runtime:
-      name: Safety cutoff — max ON runtime
-      description: "If the outlet stays ON this long for any reason, force OFF."
-      default:
-        hours: 2
-        minutes: 0
-        seconds: 0
-      selector:
-        duration: {}
-
-mode: queued
-max: 4
-
-# ---------------- Variables ----------------
-variables:
-  v_switch: !input outlet_switch
-
-  # Duty
-  duty_enabled: !input duty_enabled
-  v_interval: !input duty_interval_minutes
-  v_duty_dur: !input duty_on_duration
-
-  # Presence
-  presence_enabled: !input presence_enabled
-  v_presence: !input presence_sensor
-  v_presence_on: !input presence_on_state
-  v_presence_dur: !input presence_on_duration
-
-  # TTS plumbing (Aqara-style)
-  speak_enabled: !input tts_enabled
-  tts_engine_ent: !input tts_engine
-  players: !input tts_media_players
-  tts_cache: !input tts_cache
-  tts_voice_name: !input tts_voice
-  tts_preroll_ms: !input tts_preroll_ms
-
-  # Can we speak at all?
-  has_tts: >-
-    {{ speak_enabled and (players | length > 0)
-       and (tts_engine_ent is string and tts_engine_ent | length > 0)
+        se
