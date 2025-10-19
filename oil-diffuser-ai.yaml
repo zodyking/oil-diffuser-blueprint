@@ -136,7 +136,7 @@ blueprint:
       selector:
         duration: {}
 
-# Queue speech to avoid overlap; actions themselves run cleanly
+# Queue speech; actions still run fast
 mode: queued
 max: 4
 
@@ -180,10 +180,11 @@ trigger:
     platform: time_pattern
     minutes: "/1"
 
-  # RELIABLE presence trigger: fires when sensor becomes 'on'
+  # Presence ON — reliable: any prev state -> "on"
   - id: presence_on
     platform: state
     entity_id: !input presence_sensor
+    from: ~
     to: "on"
 
   # Safety cutoff
@@ -207,8 +208,10 @@ action:
 
       # ---- Duty cycle (independent) ----
       - conditions:
+          - condition: trigger
+            id: duty_tick
           - condition: template
-            value_template: "{{ trigger.id == 'duty_tick' and duty_enabled }}"
+            value_template: "{{ duty_enabled }}"
           - condition: template
             value_template: >-
               {% set iv = (v_interval | int(1)) %}
@@ -246,8 +249,10 @@ action:
 
       # ---- Presence (independent) ----
       - conditions:
+          - condition: trigger
+            id: presence_on
           - condition: template
-            value_template: "{{ trigger.id == 'presence_on' and presence_enabled }}"
+            value_template: "{{ presence_enabled }}"
         sequence:
           - service: logbook.log
             data:
@@ -286,8 +291,8 @@ action:
 
       # ---- Safety cutoff ----
       - conditions:
-          - condition: template
-            value_template: "{{ trigger.id == 'safety_cutoff' }}"
+          - condition: trigger
+            id: safety_cutoff
         sequence:
           - service: switch.turn_off
             target:
