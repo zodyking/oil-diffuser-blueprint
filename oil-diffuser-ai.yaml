@@ -3,9 +3,9 @@ blueprint:
   description: |
     ![OilDiffuser](https://raw.githubusercontent.com/zodyking/oil-diffuser-blueprint/refs/heads/main/ChatGPT%20Image%20Oct%2018%2C%202025%2C%2007_21_16%20PM.png)
 
-    Control a waterless oil diffuser via a smart outlet with **two independent modes** that can run at the same time:
+    Control a waterless oil diffuser via a smart outlet with two independent modes that can run at the same time:
     • Duty cycle — every X minutes, turn ON for Y minutes  
-    • Presence — when presence is detected, turn ON for Z minutes  
+    • Presence — when the presence sensor is ON, turn ON for Z minutes  
     Optional TTS before ON and a safety max-runtime cutoff.
   domain: automation
   author: chat.openai.com/@gpt
@@ -22,7 +22,7 @@ blueprint:
 
     presence_sensor:
       name: Presence / motion sensor
-      description: "Binary sensor used for Presence mode (leave empty to disable Presence mode)."
+      description: "Binary sensor used for Presence mode (leave empty to disable Presence mode). Fires when the sensor is 'on'."
       default: ""
       selector:
         entity:
@@ -31,22 +31,22 @@ blueprint:
     # ---- Mode toggles (ordered) ----
     duty_enabled:
       name: Duty cycle enabled
-      description: "Runs a periodic cycle: every X minutes, turn ON for Y duration."
+      description: "Run a cycle every X minutes."
       default: true
       selector:
         boolean: {}
 
     presence_enabled:
       name: Presence mode enabled
-      description: "Turns ON when the presence sensor changes to the selected state, then runs for Z duration."
+      description: "Turn ON when the presence sensor goes to 'on'."
       default: true
       selector:
         boolean: {}
 
     # ---- Duty cycle settings ----
     duty_interval_minutes:
-      name: Duty cycle interval (minutes)
-      description: "Every X minutes, start one ON period."
+      name: Cycle interval (minutes)
+      description: "How often to start a cycle."
       default: 30
       selector:
         number:
@@ -56,7 +56,7 @@ blueprint:
           unit_of_measurement: min
 
     duty_on_duration:
-      name: Duty cycle ON duration
+      name: On-time per cycle
       description: "How long to keep the outlet ON each cycle."
       default:
         hours: 0
@@ -66,16 +66,8 @@ blueprint:
         duration: {}
 
     # ---- Presence settings ----
-    presence_on_state:
-      name: Presence 'ON' state
-      description: "Which state means detected/present for your sensor."
-      default: "on"
-      selector:
-        select:
-          options: ["on", "home", "occupied", "detected"]
-
     presence_on_duration:
-      name: Presence ON duration
+      name: Presence on-time
       description: "How long to keep the outlet ON after presence is detected."
       default:
         hours: 0
@@ -145,7 +137,7 @@ blueprint:
       selector:
         duration: {}
 
-# Queue speech to avoid overlap; actions themselves can run in parallel
+# Queue speech to avoid overlap; actions themselves run cleanly
 mode: queued
 max: 4
 
@@ -161,7 +153,6 @@ variables:
   # Presence
   presence_enabled: !input presence_enabled
   v_presence: !input presence_sensor
-  v_presence_on: !input presence_on_state
   v_presence_dur: !input presence_on_duration
 
   # TTS plumbing (Aqara-style)
@@ -185,17 +176,20 @@ variables:
 
 # ---------------- Triggers ----------------
 trigger:
+  # Duty-cycle tick: evaluate every minute; branch checks enable & interval
   - id: duty_tick
     platform: time_pattern
     minutes: "/1"
 
+  # Presence ON (template trigger is safe if sensor left blank)
   - id: presence_on
     platform: template
     value_template: >-
       {{ presence_enabled
          and (v_presence | string | length > 0)
-         and is_state(v_presence, v_presence_on) }}
+         and is_state(v_presence, 'on') }}
 
+  # Safety cutoff
   - id: safety_cutoff
     platform: state
     entity_id: !input outlet_switch
@@ -207,13 +201,14 @@ condition: []
 # ---------------- Actions ----------------
 action:
   - variables:
+      # recompute per-run in case Areas change
       v_msg_now: >-
         {% set area = area_name(v_switch) %}
         {{ 'Freshening up ' ~ (area if area else 'the room') ~ '.' }}
 
   - choose:
 
-      # Duty cycle
+      # ---- Duty cycle (independent) ----
       - conditions:
           - condition: template
             value_template: "{{ trigger.id == 'duty_tick' and duty_enabled }}"
@@ -252,7 +247,7 @@ action:
                 target:
                   entity_id: !input outlet_switch
 
-      # Presence
+      # ---- Presence (independent) ----
       - conditions:
           - condition: template
             value_template: "{{ trigger.id == 'presence_on' }}"
@@ -287,7 +282,7 @@ action:
                 target:
                   entity_id: !input outlet_switch
 
-      # Safety cutoff
+      # ---- Safety cutoff ----
       - conditions:
           - condition: template
             value_template: "{{ trigger.id == 'safety_cutoff' }}"
